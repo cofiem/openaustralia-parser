@@ -13,3 +13,7 @@ data/register_of_interests/senate/*.pdf
 data/register_of_interests/representatives/*.pdf
 .*.sw?
 configuration.yml
+
+.idea/
+*.pyc
+__pycache__/
