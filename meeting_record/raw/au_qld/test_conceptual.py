@@ -1,8 +1,6 @@
 import os
 import unittest
 
-from parliaments.au_qld.hansard import Hansard
-
 
 class HansardConceptualTestCase(unittest.TestCase):
     hansard: Hansard = None
@@ -47,7 +45,3 @@ class HansardConceptualTestCase(unittest.TestCase):
              'au-qld-example-page-5-header', 'au-qld-example-page-6-header'},
             {i for i in result['headers'].keys()}
         )
-
-
-if __name__ == '__main__':
-    unittest.main()

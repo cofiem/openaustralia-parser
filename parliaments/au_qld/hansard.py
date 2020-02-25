@@ -51,7 +51,8 @@ class Hansard:
         overall_line_number = 1
         page_line_number = 1
         overall_page_number = 1
-        with open(str(path)) as f:
+        include_line_in_page = True
+        with open(str(path), encoding='utf8') as f:
             for overall_line_index, original_text in enumerate(f):
 
                 # this type of line is unexpected
@@ -107,10 +108,21 @@ class Hansard:
                     overall_page_number += 1
 
                     # reset the page line number
-                    page_line_number = 1
+                    page_line_number = None
 
                     # create the current page
                     current_page = self._build_page(current_file, overall_page_number)
+
+                    # the first line of a page with content should not be included in the body lines
+                    include_line_in_page = False
+
+                if '228  Public Health' in original_text:
+                    a = 1
+
+                # TODO: need to account for when the page title goes over more than one line
+                if not include_line_in_page and original_text != '\n' and '\f' not in original_text:
+                    include_line_in_page = True
+                    page_line_number = 1
 
                 # save the previous line
                 if current_line:
@@ -122,18 +134,21 @@ class Hansard:
                 # assign the page header if necessary
                 if '\f' in original_text:
                     page_header = self._get_page_header(current_line)
-                    pdf_page_number = page_header[1]
-                    current_page.pdf_page_number = pdf_page_number
+                    current_page.pdf_page_title = page_header[0]
+                    current_page.pdf_page_number = int(page_header[1]) if page_header[1] else None
 
-                # assign the line's page and add the line to the page
+                # assign the line's page
                 current_line.page_id = current_page.page_id
-                current_page.line_ids.append(current_line.line_id)
+
+                if include_line_in_page:
+                    # add the line to the page
+                    current_page.line_ids.append(current_line.line_id)
+
+                    # increment the page line number
+                    page_line_number += 1
 
                 # increment the overall line number
                 overall_line_number += 1
-
-                # increment the page line number
-                page_line_number += 1
 
         return {
             'files': {current_file_id: current_file},
@@ -233,7 +248,8 @@ class Hansard:
                 is_main_document = True
 
             # parse the ISSN
-            if is_preface_title_section and line_norm_no_ws.startswith('ISSN ') and current_document.international_standard_serial_number is None:
+            if is_preface_title_section and line_norm_no_ws.startswith(
+                    'ISSN ') and current_document.international_standard_serial_number is None:
                 current_document.international_standard_serial_number = line_norm_no_ws.replace('ISSN ', '')
 
             # parse the parliament session
@@ -241,7 +257,8 @@ class Hansard:
                 current_document.session = line_norm_no_ws.title()
 
             # parse the parliament sitting date
-            if is_preface_title_section and line_norm_no_ws.endswith(current_year) and current_document.document_date is None:
+            if is_preface_title_section and line_norm_no_ws.endswith(
+                    current_year) and current_document.document_date is None:
                 current_document.document_date = datetime.strptime(line_norm_no_ws, '%A, %d %B %Y')
 
             # add the line to the paragraph if is_preface_title_section
@@ -274,14 +291,13 @@ class Hansard:
                 if not current_line.is_empty() and previous_line and previous_line.is_empty() and next_line and next_line.is_empty():
                     a = 1
 
-
                 # paragraph
 
                 # begin a paragraph
-                if (previous_line and previous_line.is_empty() and not line_norm.startswith(' ')) or current_line.has_indent(paragraph_indent, ' '):
-                    current_paragraph = Paragraph(
-                        paragraph_id=self._build_id([document_id, 'paragraph', current_line.overall_line_number]),
-                    )
+                # if (previous_line and previous_line.is_empty() and not line_norm.startswith(' ')) or current_line.has_indent(paragraph_indent, ' '):
+                #     current_paragraph = Paragraph(
+                #         paragraph_id=self._build_id([document_id, 'paragraph', current_line.overall_line_number]),
+                #     )
 
                 # continue a paragraph
                 if not line_is_empty and not line_norm.startswith(' '):

@@ -1,30 +1,16 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
+from meeting_record.model import Base
+
 
 @dataclass
-class Line:
-    """A line in a page, part of a paragraph or header."""
+class Line(Base):
+    """A line in a page, part of a paragraph or page or header."""
 
-    line_id: str
-
-    # the raw line content
     raw_text: str
-
-    # line number in the pdftotext text file (from 1)
     overall_line_number: int
-
-    # line number in the page (from 1)
     page_line_number: Optional[int] = None
-
-    # the page that contains this line
-    page_id: str = None
-
-    # the paragraph that contains this line
-    paragraph_id: str = None
-
-    # the paragraph that contains this line
-    header_id: str = None
 
     def normalised(self) -> str:
         return self.raw_text.strip('\f\n\t') if self.raw_text else ''
@@ -46,13 +32,13 @@ class Line:
     def is_empty(self) -> bool:
         return self.normalised_no_whitespace() == ''
 
-    def previous_line_id(self):
+    def previous_line_number(self) -> Optional[int]:
         if self.is_file_first_line():
             return None
-        return '-'.join(self.line_id.split('-')[0:-1] + [str(self.overall_line_number - 1)])
+        return self.overall_line_number - 1
 
-    def next_line_id(self):
-        return '-'.join(self.line_id.split('-')[0:-1] + [str(self.overall_line_number + 1)])
+    def next_line_number(self) -> int:
+        return self.overall_line_number + 1
 
     def has_indent(self, count: int, character: str = ' ') -> bool:
         indent = character * count
