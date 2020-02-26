@@ -111,7 +111,7 @@ class HansardPersistenceTestCase(unittest.TestCase):
                 actual_line = actual_body_line or actual_header_line or actual_footer_line
                 expected_line = Line(
                     raw_text=expected_line_text, overall_line_number=expected_line_number,
-                    page_line_number=expected_page_line_number)
+                    page_line_number=expected_page_line_number, page_number=expected_page_number)
                 self.assertEqual(expected_page_number, actual_page.overall_number)
                 self.assertEqual(expected_line, actual_line)
 

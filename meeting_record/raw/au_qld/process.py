@@ -2,20 +2,20 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple
 
-from meeting_record.model import File, Document, Page, Line
+from meeting_record.model import File, Document, Page, Line, Section, Paragraph, Base
 
 
-class Process:
+class Process(Base):
     """Extract information from the Queensland Parliament Hansard / Record of Proceedings files."""
 
-    def run(self, input_file):
+    def run(self, input_file: str):
         input_path = Path(input_file)
 
         # First read the path into a file
-        file_data = self._read(input_path)
+        file_data = self.read(input_path)
 
         # Then build the document from the file
-        doc_data = self._extract(file_data)
+        doc_data = self.extract(file_data)
 
         return doc_data
 
@@ -98,6 +98,7 @@ class Process:
 
                 # create the current line
                 current_line = self._build_line(overall_line_number, page_line_number, original_text)
+                current_line.page_number = current_page.overall_number
 
                 if is_page_header:
                     # add the line to the page
@@ -126,12 +127,81 @@ class Process:
         return current_file
 
     def extract(self, file_data: File) -> Document:
-        pass
+        current_document: Document = Document()
+
+        paragraph_indent = 8
+        header_indent = 17  # TODO: also use the toc to identifier header (particularly headers over more than one line)
+        position_marker = 'preface'
+        gather_lines = []
+
+        current_section: Optional[Section] = None
+
+        for current_page in file_data.pages:
+            current_body_lines = current_page.body_lines
+            current_body_numbers = [i.overall_line_number for i in current_body_lines]
+            current_body_line_count = len(current_body_lines)
+            has_current_page_header_number = current_page.header_number is not None
+            for current_body_line in current_body_lines:
+
+                # --- calculate line facts ---
+
+                line_norm = current_body_line.normalised()
+                line_norm_no_ws = current_body_line.normalised_no_whitespace()
+                line_split_words = current_body_line.split_words()
+                line_is_empty = current_body_line.is_empty()
+                line_is_page_start = current_body_line.is_page_first_line()
+
+                # --- activities that extract info from a line but want to group the line ---
+
+                # parse the ISSN
+                if current_document.identifier is None and line_norm_no_ws and line_norm_no_ws.startswith('ISSN '):
+                    current_document.identifier = line_norm_no_ws.replace('ISSN ', '')
+
+                # parse the parliament session
+                if current_document.session is None and line_norm_no_ws and \
+                        all(i in line_norm_no_ws for i in ['SESSION', 'PARLIAMENT']):
+                    current_document.session = line_norm_no_ws.title()
+
+                # parse the parliament sitting date
+                if current_document.session_date is None and line_norm_no_ws:
+                    current_document.session_date = self._get_datetime(line_norm_no_ws)
+
+                # --- activities that group lines ---
+
+                # change to the preface toc (current line is first line of toc)
+                if position_marker == 'preface' and line_split_words == ['Subject', 'Page']:
+                    current_document.sections.append(Section(paragraphs=[Paragraph(lines=gather_lines)]))
+                    position_marker = 'toc'
+                    gather_lines = []
+
+                # change to the main part (current line is the first line of the main part)
+                if position_marker == 'toc' and has_current_page_header_number and line_is_page_start and \
+                        self._get_datetime(line_norm_no_ws) is not None:
+                    current_document.sections.append(Section(paragraphs=[Paragraph(lines=gather_lines)]))
+                    position_marker = 'main'
+                    gather_lines = []
+
+                # start a new section
+                if position_marker == 'main' and \
+                        current_body_line.has_readable_text() and \
+                        current_body_line.has_indent_at_least(header_indent):
+                    if current_section:
+                        current_document.sections.append(current_section)
+                    current_section = Section()
+
+                # end the current group
+                if position_marker == 'main' and current_body_line.raw_text == '\n':
+                    a = 1
+
+                # add current line to gathering
+                gather_lines.append(current_body_line)
+
+        return current_document
 
     def _build_page(self, overall_number: int):
         return Page(overall_number=overall_number)
 
-    def _build_line(self, overall_line_number: int, page_line_number: int, raw_text: str):
+    def _build_line(self, overall_line_number: int, page_line_number: int, raw_text: str) -> 'Line':
         return Line(raw_text=raw_text, overall_line_number=overall_line_number, page_line_number=page_line_number)
 
     def _get_page_header(self, line: Line) -> Tuple[str, Optional[int]]:

@@ -1,3 +1,4 @@
+import typing
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -11,6 +12,7 @@ class Line(Base):
     raw_text: str
     overall_line_number: int
     page_line_number: Optional[int] = None
+    page_number: Optional[int] = None
 
     def normalised(self) -> str:
         return self.raw_text.strip('\f\n\t') if self.raw_text else ''
@@ -32,14 +34,28 @@ class Line(Base):
     def is_empty(self) -> bool:
         return self.normalised_no_whitespace() == ''
 
-    def previous_line_number(self) -> Optional[int]:
+    def previous_overall_line_number(self) -> Optional[int]:
         if self.is_file_first_line():
             return None
         return self.overall_line_number - 1
 
-    def next_line_number(self) -> int:
+    def next_overall_line_number(self) -> int:
         return self.overall_line_number + 1
 
-    def has_indent(self, count: int, character: str = ' ') -> bool:
+    def previous_page_line_number(self) -> Optional[int]:
+        if self.is_page_first_line():
+            return None
+        return self.page_line_number - 1
+
+    def next_page_line_number(self) -> int:
+        return self.page_line_number + 1
+
+    def has_indent_at_least(self, count: int, character: str = ' ') -> bool:
         indent = character * count
-        return self.raw_text.startswith(indent) and self.raw_text[count] != character
+        return self.raw_text.startswith(indent)
+
+    def has_indent(self, count: int, character: str = ' ') -> bool:
+        return self.has_indent_at_least(count, character) and self.raw_text[count] != character
+
+    def has_readable_text(self) -> bool:
+        return self.raw_text and any(c.isalpha() for c in self.normalised_no_whitespace())

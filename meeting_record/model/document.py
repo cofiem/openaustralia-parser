@@ -13,7 +13,7 @@ if typing.TYPE_CHECKING:
 class Document(Base):
     """A document from a file."""
 
-    session: str
+    session: str = None
     session_date: date = None
     identifier: str = None
     sections: List['Section'] = field(default_factory=list)

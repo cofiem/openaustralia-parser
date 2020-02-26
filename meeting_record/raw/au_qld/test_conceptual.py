@@ -1,47 +1,39 @@
 import os
 import unittest
+from datetime import datetime
+from pathlib import Path
+
+from meeting_record.raw.au_qld.process import Process
 
 
 class HansardConceptualTestCase(unittest.TestCase):
-    hansard: Hansard = None
+    process: Process = None
     this_file_dir: str = None
+    example_path: Path = None
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.hansard = Hansard()
+        cls.process = Process()
         cls.this_file_dir = os.path.dirname(__file__)
+        cls.example_path = Path(os.path.join(cls.this_file_dir, 'example.txt'))
+        cls.example_data = cls.process.read(cls.example_path)
 
-    def test_fails_when_file_does_not_exist(self):
-        with self.assertRaises(FileNotFoundError):
-            self.hansard.run(os.path.join(self.this_file_dir, 'does_not_exist.txt'))
-
-    def test_passes_when_file_does_exist(self):
-        self.hansard.run(os.path.join(self.this_file_dir, 'example.txt'))
-
-    def test_has_expected_documents(self):
-        result = self.hansard.run(os.path.join(self.this_file_dir, 'example.txt'))
-        self.assertSetEqual(
-            {'au-qld-example-document-1'},
-            {i for i in result['documents'].keys()}
-        )
-
-    def test_has_expected_document_issn(self):
-        result = self.hansard.run(os.path.join(self.this_file_dir, 'example.txt'))
-        self.assertEqual(
-            '1322-0330',
-            result['documents']['au-qld-example-document-1'].international_standard_serial_number
-        )
+    def test_has_expected_document_identifier(self):
+        result = self.process.extract(self.example_data)
+        self.assertEqual('1322-0330', result.identifier)
 
     def test_has_expected_document_session(self):
-        result = self.hansard.run(os.path.join(self.this_file_dir, 'example.txt'))
-        self.assertEqual(
-            'First Session Of The Fifty-Sixth Parliament',
-            result['documents']['au-qld-example-document-1'].session)
+        result = self.process.extract(self.example_data)
+        self.assertEqual('First Session Of The Fifty-Sixth Parliament', result.session)
+
+    def test_has_expected_document_date(self):
+        result = self.process.extract(self.example_data)
+        self.assertEqual(datetime(2020, 2, 6), result.session_date)
 
     def test_has_expected_page_headers(self):
-        result = self.hansard.run(os.path.join(self.this_file_dir, 'example.txt'))
+        result = self.process.extract(self.example_data)
         self.assertSetEqual(
             {'au-qld-example-page-2-header', 'au-qld-example-page-3-header',
              'au-qld-example-page-5-header', 'au-qld-example-page-6-header'},
-            {i for i in result['headers'].keys()}
+            {i.header for i in result.sections}
         )
