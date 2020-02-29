@@ -345,31 +345,39 @@ class Process(Base):
     def _process_vote(self, page: Page, line: Line, item: Vote) -> Base:
         self._assert_type(Vote, item)
 
-        if self.is_vote_start(line):
+        line_empty = line.is_empty()
+        vote_start = self.is_vote_start(line) or item.question_lines
+        vote_yes = self._is_vote_yes(line) or item.yes_lines
+        vote_no = self._is_vote_no(line) or item.no_lines
+        vote_pair = self._is_vote_pair(line) or item.pair_lines
+        vote_resolution = self._is_vote_resolution(line) or item.resolution_lines
+        vote_outcome = self._is_vote_outcome(line) or item.outcome_lines
+
+        if vote_start and not vote_yes and not line_empty:
             item.question_lines.append(line)
             return item
 
-        if (self._is_vote_yes(line) or item.yes_lines) and not item.no_lines and not self._is_vote_no(line):
+        if vote_yes and vote_start and not vote_no and not line_empty:
             item.yes_lines.append(line)
             return item
 
-        if (self._is_vote_no(line) or item.no_lines) and not item.pair_lines and not self._is_vote_pair(line):
+        if vote_no and vote_yes and not vote_pair and not line_empty:
             item.no_lines.append(line)
             return item
 
-        if self._is_vote_pair(line):
+        if vote_pair and vote_no and not vote_resolution and not line_empty:
             item.pair_lines.append(line)
             return item
 
-        if not item.resolution_lines:
+        if vote_resolution and vote_no and not vote_outcome and not line_empty:
             item.resolution_lines.append(line)
             return item
 
-        if not item.outcome_lines:
+        if vote_outcome and vote_resolution and not line_empty:
             item.outcome_lines.append(line)
             return item
 
-        if item.outcome_lines:
+        if line_empty and vote_outcome:
             return item.section
 
         return item
@@ -406,6 +414,12 @@ class Process(Base):
     def _is_vote_pair(self, line: Line) -> bool:
         line_no_ws = line.normalised_no_whitespace()
         return line_no_ws.startswith('Pair: ')
+
+    def _is_vote_resolution(self, line: Line) -> bool:
+        return line.contains_word('affirmative') or line.contains_word('negatived')
+
+    def _is_vote_outcome(self, line: Line) -> bool:
+        return line.contains('agreed to')
 
     def _assert_type(self, expected_type: Type[Base], item):
         if not isinstance(item, expected_type):

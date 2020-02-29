@@ -76,6 +76,12 @@ class HansardConceptualTestCase(unittest.TestCase):
                                274, 275, 276,
                                278, 279, 280, 281, 282, 283, 284,
                                285, 286, 287, 288, 289, 290],
+                "sections": [
+                    {
+                        'header': [320],
+                        'paragraphs': [322, 324, 326, 327],
+                    },
+                ],
                 'votes': [{
                     'question': [291],
                     'yes': [293, 295, 297, 298, 299, 301, 302],
@@ -84,10 +90,6 @@ class HansardConceptualTestCase(unittest.TestCase):
                     'resolution': [317],
                     'outcome': [318]
                 }]
-            },
-            {
-                'header': [230],
-                'paragraphs': [322, 324, 326, 327],
             },
             {
                 'header': [329, 330],
@@ -101,14 +103,6 @@ class HansardConceptualTestCase(unittest.TestCase):
                                    350, 351, 352, 353, 354, 355, 356, 357, 358, 359,
                                    361, 362, 363, 364, 365, 366, 367, 368, 369, 370,
                                    372],
-                }]
-            },
-            {
-                'header': [329, 330],
-                'paragraphs': [332],
-                'sections': [{
-                    'header': [334],
-                    'paragraphs': [336, 339, 341, 346, 350, 361, 372],
                 }]
             },
             {
