@@ -1,10 +1,9 @@
-import typing
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from meeting_record.model import Base
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from meeting_record.model import Line
 
 
@@ -18,3 +17,8 @@ class Page(Base):
     header_lines: List['Line'] = field(default_factory=list)
     footer_lines: List['Line'] = field(default_factory=list)
     body_lines: List['Line'] = field(default_factory=list)
+
+    def __str__(self):
+        return f'Page {self.overall_number} "{self.header_title} - {self.header_number}"; ' \
+               f'lines: {self._make_ranges(self.header_lines)} header, ' \
+               f'{self._make_ranges(self.body_lines)} body, {self._make_ranges(self.footer_lines)} footer'

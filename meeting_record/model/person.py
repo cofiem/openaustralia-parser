@@ -14,3 +14,6 @@ class Person(Base):
     party: str
     titles: List[str] = field(default_factory=list)
     roles: List[str] = field(default_factory=list)
+
+    def __str__(self):
+        return f"{self.last_name}, {self.initial_name}"

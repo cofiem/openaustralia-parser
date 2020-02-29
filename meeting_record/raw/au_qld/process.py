@@ -1,12 +1,16 @@
 import re
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Type
 
-from meeting_record.model import File, Document, Page, Line, Section, Paragraph, Base
+from meeting_record.model import File, Document, Page, Line, Section, Base, Preface, \
+    TableOfContents, Header, Paragraph, Attendance, Vote
 
 
 class Process(Base):
     """Extract information from the Queensland Parliament Hansard / Record of Proceedings files."""
+
+    paragraph_indents = [8, 10]
+    header_indent = 17
 
     def run(self, input_file: str):
         input_path = Path(input_file)
@@ -127,76 +131,40 @@ class Process(Base):
         return current_file
 
     def extract(self, file_data: File) -> Document:
-        current_document: Document = Document()
+        result: Document = Document()
+        current_item: Optional[Base] = result
 
-        paragraph_indent = 8
-        header_indent = 17  # TODO: also use the toc to identifier header (particularly headers over more than one line)
-        position_marker = 'preface'
-        gather_lines = []
+        block_dispatch = {
+            self._get_class_name(Attendance): self._process_attendance,
+            self._get_class_name(Document): self._process_document,
+            self._get_class_name(Header): self._process_header,
+            self._get_class_name(Paragraph): self._process_paragraph,
+            self._get_class_name(Preface): self._process_preface,
+            self._get_class_name(Section): self._process_section,
+            self._get_class_name(TableOfContents): self._process_toc,
+            self._get_class_name(Vote): self._process_vote,
+        }
 
-        current_section: Optional[Section] = None
+        # Note: lines that are empty will not be included in some data classes, e.g. document, section, paragraph
 
         for current_page in file_data.pages:
-            current_body_lines = current_page.body_lines
-            current_body_numbers = [i.overall_line_number for i in current_body_lines]
-            current_body_line_count = len(current_body_lines)
-            has_current_page_header_number = current_page.header_number is not None
-            for current_body_line in current_body_lines:
+            for current_line in current_page.body_lines:
 
-                # --- calculate line facts ---
+                # while the new block type does not equal the previous block type, try processing the line again
+                # The current_item is the parent of the current block.
+                # The block_type is the type of block that needs to be processed
+                while True:
+                    key = self._get_instance_name(current_item)
+                    new_item = block_dispatch[key](current_page, current_line, current_item)
 
-                line_norm = current_body_line.normalised()
-                line_norm_no_ws = current_body_line.normalised_no_whitespace()
-                line_split_words = current_body_line.split_words()
-                line_is_empty = current_body_line.is_empty()
-                line_is_page_start = current_body_line.is_page_first_line()
+                    if self._get_instance_name(new_item) == self._get_instance_name(current_item):
+                        break
+                    else:
+                        current_item = new_item
 
-                # --- activities that extract info from a line but want to group the line ---
+        # TODO: also use the toc to identify headers (particularly headers over more than one line)
 
-                # parse the ISSN
-                if current_document.identifier is None and line_norm_no_ws and line_norm_no_ws.startswith('ISSN '):
-                    current_document.identifier = line_norm_no_ws.replace('ISSN ', '')
-
-                # parse the parliament session
-                if current_document.session is None and line_norm_no_ws and \
-                        all(i in line_norm_no_ws for i in ['SESSION', 'PARLIAMENT']):
-                    current_document.session = line_norm_no_ws.title()
-
-                # parse the parliament sitting date
-                if current_document.session_date is None and line_norm_no_ws:
-                    current_document.session_date = self._get_datetime(line_norm_no_ws)
-
-                # --- activities that group lines ---
-
-                # change to the preface toc (current line is first line of toc)
-                if position_marker == 'preface' and line_split_words == ['Subject', 'Page']:
-                    current_document.sections.append(Section(paragraphs=[Paragraph(lines=gather_lines)]))
-                    position_marker = 'toc'
-                    gather_lines = []
-
-                # change to the main part (current line is the first line of the main part)
-                if position_marker == 'toc' and has_current_page_header_number and line_is_page_start and \
-                        self._get_datetime(line_norm_no_ws) is not None:
-                    current_document.sections.append(Section(paragraphs=[Paragraph(lines=gather_lines)]))
-                    position_marker = 'main'
-                    gather_lines = []
-
-                # start a new section
-                if position_marker == 'main' and \
-                        current_body_line.has_readable_text() and \
-                        current_body_line.has_indent_at_least(header_indent):
-                    if current_section:
-                        current_document.sections.append(current_section)
-                    current_section = Section()
-
-                # end the current group
-                if position_marker == 'main' and current_body_line.raw_text == '\n':
-                    a = 1
-
-                # add current line to gathering
-                gather_lines.append(current_body_line)
-
-        return current_document
+        return result
 
     def _build_page(self, overall_number: int):
         return Page(overall_number=overall_number)
@@ -218,3 +186,234 @@ class Process(Base):
             return matches_left[0][1], matches_left[0][0]
 
         return line_norm_no_ws, None
+
+    def _process_attendance(self, page: Page, line: Line, item: Attendance) -> Base:
+        self._assert_type(Attendance, item)
+
+        # TODO: parse people present
+
+        if not line.is_empty():
+            item.lines.append(line)
+            return item
+
+        return item
+
+    def _process_document(self, page: Page, line: Line, item: Document) -> Base:
+        self._assert_type(Document, item)
+
+        if item.preface is None:
+            item.preface = Preface(document=item)
+            return item.preface
+
+        if item.toc is None:
+            item.toc = TableOfContents(document=item)
+            return item.toc
+
+        if not line.is_empty():
+            section = Section(document=item)
+            return section
+
+        return item
+
+    def _process_header(self, page: Page, line: Line, item: Header) -> Base:
+        self._assert_type(Header, item)
+
+        if line.has_readable_text():
+            item.lines.append(line)
+            return item
+
+        if line.is_empty():
+            # go back up to the parent section
+            return item.section
+
+        return item
+
+    def _process_paragraph(self, page: Page, line: Line, item: Paragraph) -> Base:
+        self._assert_type(Paragraph, item)
+
+        # TODO: parse person and time
+
+        # start a paragraph or continue the current paragraph
+        if self._is_paragraph_start(line) or self._is_paragraph_continuation(line):
+            item.lines.append(line)
+            return item
+
+        if self.is_vote_start(line):
+            return item.section
+
+        if line.is_empty():
+            # go back up to the parent section
+            return item.section
+
+        return item
+
+    def _process_preface(self, page: Page, line: Line, item: Preface) -> Base:
+        self._assert_type(Preface, item)
+
+        line_no_ws = line.normalised_no_whitespace().casefold()
+        line_split_words = [i.casefold() for i in line.split_words()]
+
+        # change to the preface toc (current line is first line of toc)
+        text_toc_header = [i.casefold() for i in ['Subject', 'Page']]
+        if line_split_words == text_toc_header:
+            return item.document
+
+        # add the line to the preface
+        item.lines.append(line)
+
+        # parse the ISSN
+        text_issn = 'ISSN '.casefold()
+        if item.identifier is None and line_no_ws and line_no_ws.startswith(text_issn):
+            item.identifier = line_no_ws.replace(text_issn, '')
+            return item
+
+        # parse the parliament session
+        text_session = [i.casefold() for i in ['SESSION', 'PARLIAMENT']]
+        if item.session is None and line_no_ws and all(i in line_no_ws for i in text_session):
+            item.session = line_no_ws.title()
+            return item
+
+        # parse the parliament sitting date
+        if item.session_date is None and line_no_ws:
+            item.session_date = self._get_datetime(line_no_ws)
+            return item
+
+        if line.is_empty():
+            return item
+
+        return item
+
+    def _process_section(self, page: Page, line: Line, item: Section) -> Base:
+        self._assert_type(Section, item)
+
+        # change to the top-level header and ensure there is a section in the document
+        # this will also change to the next section each time a header 1 is found
+        if self._is_header_1(line):
+            section = Section(document=item.document)
+            item.document.sections.append(section)
+            section.header = Header(section=section)
+            return section.header
+
+        # a level 2 header
+        # a section header line, level 2
+        if self._is_header_2(line):
+            section = Section(document=item.document, section=item)
+            item.sections.append(section)
+            section.header = Header(section=section)
+            return section.header
+
+        # start or continue attendance
+        if item.is_attendance() and not line.is_empty():
+            attendance = Attendance(section=item)
+            item.attendance = attendance
+            return attendance
+
+        # start a vote
+        if self.is_vote_start(line):
+            vote = Vote(section=item)
+            item.votes.append(vote)
+            return vote
+
+        # start a paragraph
+        if self._is_paragraph_start(line):
+            paragraph = Paragraph(section=item)
+            item.paragraphs.append(paragraph)
+            return paragraph
+
+        # continue a paragraph
+        if self._is_paragraph_continuation(line):
+            paragraph = item.paragraphs[-1]
+            return paragraph
+
+        if line.is_empty():
+            return item
+
+        return item
+
+    def _process_toc(self, page: Page, line: Line, item: TableOfContents) -> Base:
+        self._assert_type(TableOfContents, item)
+
+        # change to the main part (current line is the first line of the main part)
+        if page.header_number is not None and line.is_page_first_line():
+            return item.document
+
+        # add the line to the toc
+        item.lines.append(line)
+
+        return item
+
+    def _process_vote(self, page: Page, line: Line, item: Vote) -> Base:
+        self._assert_type(Vote, item)
+
+        if self.is_vote_start(line):
+            item.question_lines.append(line)
+            return item
+
+        if (self._is_vote_yes(line) or item.yes_lines) and not item.no_lines and not self._is_vote_no(line):
+            item.yes_lines.append(line)
+            return item
+
+        if (self._is_vote_no(line) or item.no_lines) and not item.pair_lines and not self._is_vote_pair(line):
+            item.no_lines.append(line)
+            return item
+
+        if self._is_vote_pair(line):
+            item.pair_lines.append(line)
+            return item
+
+        if not item.resolution_lines:
+            item.resolution_lines.append(line)
+            return item
+
+        if not item.outcome_lines:
+            item.outcome_lines.append(line)
+            return item
+
+        if item.outcome_lines:
+            return item.section
+
+        return item
+
+    def _is_paragraph_start(self, line: Line):
+        return line.has_readable_text() and \
+               (line.has_indent(self.paragraph_indents) or not line.normalised().startswith(' ')) and \
+               (not line.contains('Division: Question put—'))
+
+    def _is_paragraph_continuation(self, line: Line):
+        return line.has_readable_text() and not line.normalised().startswith(' ') and \
+               (not line.contains('Division: Question put—'))
+
+    def _is_header_1(self, line: Line):
+        return line.has_readable_text() and line.normalised_no_whitespace().isupper()
+
+    def _is_header_2(self, line: Line):
+        return line.has_readable_text() and not line.normalised_no_whitespace().isupper() \
+               and not line.has_indent(self.paragraph_indents) \
+               and line.normalised().startswith(' ')
+
+    def is_vote_start(self, line: Line) -> bool:
+        return line.has_readable_text() and line.contains('Division: Question put—') and \
+               line.has_indent(self.paragraph_indents)
+
+    def _is_vote_yes(self, line: Line) -> bool:
+        line_no_ws = line.normalised_no_whitespace()
+        return line_no_ws.startswith('AYES, ') and line_no_ws.endswith(':')
+
+    def _is_vote_no(self, line: Line) -> bool:
+        line_no_ws = line.normalised_no_whitespace()
+        return line_no_ws.startswith('NOES, ') and line_no_ws.endswith(':')
+
+    def _is_vote_pair(self, line: Line) -> bool:
+        line_no_ws = line.normalised_no_whitespace()
+        return line_no_ws.startswith('Pair: ')
+
+    def _assert_type(self, expected_type: Type[Base], item):
+        if not isinstance(item, expected_type):
+            raise ValueError(
+                f"Expected a '{self._get_class_name(expected_type)}', got a '{self._get_instance_name(item)}'.")
+
+    def _get_class_name(self, value: Type[Base]) -> str:
+        return value.__name__
+
+    def _get_instance_name(self, value: Base) -> str:
+        return value.__class__.__name__
